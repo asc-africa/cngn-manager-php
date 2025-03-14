@@ -128,7 +128,7 @@ echo $virtualAccount;
 NOTE: before creating the virtual account you need to have updated your BVN on the dashboard
 
 
-#### Swap Assets 
+#### Bridge Assets 
 
 ```php
 $swapData = [
