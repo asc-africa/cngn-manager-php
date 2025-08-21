@@ -126,6 +126,10 @@ class CNGnManager implements ICNGnManager {
         return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/swap", $data);
     }
 
+    public function swapQuote(array $data): string{
+        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/swap-quote", $data);
+    }
+
 
 }
 
