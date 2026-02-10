@@ -102,34 +102,76 @@ class CNGnManager implements ICNGnManager {
         return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/transactions?page=$page&limit=$limit");
     }
 
-    public function withdraw(array $data): string{
-        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/withdraw", $data);
+    /**
+     * @param array{provider: string, bank_code: string} $data
+     */
+    public function getVirtualAccount(): string{
+        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/virtual-account");
     }
 
+    /**
+     * @param array{amount: int, bankCode: string, accountNumber: string, saveDetails?: bool} $data
+     */
     public function redeemAssets(array $data): string {
         return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/redeemAsset", $data);
     }
 
-    public function createVirtualAccount(array $data): string{
-        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/createVirtualAccount", $data);
+    public function verifyWithdraw(string $tnxRef): string{
+        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/withdraw/verify/$tnxRef");
     }
 
-    public function updateExternalAccounts(array $data): string{
-        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/updateBusiness", $data);
+    /**
+     * @param array{amount: int, address: string, network: string, shouldSaveAddress?: bool} $data
+     */
+    public function withdraw(array $data): string{
+        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/withdraw", $data);
     }
 
     public function getBanks(): string{
         return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/banks");
     }
 
+    /**
+     * @param array{destinationNetwork: string, destinationAddress: string, originNetwork: string, callbackUrl: string} $data
+     */
     public function swapAssets(array $data): string{
         return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/swap", $data);
     }
 
+    /**
+     * @param array{destinationNetwork: string, originNetwork: string} $data
+     */
     public function swapQuote(array $data): string{
         return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/swap-quote", $data);
     }
 
+    /**
+     * @param array{walletAddress?: array{bscAddress?: string, atcAddress?: string, xbnAddress?: string, ethAddress?: string, polygonAddress?: string, tronAddress?: string, baseAddress?: string, bantuUserId?: string}, bankDetails?: array{bankName: string, bankAccountName: string, bankAccountNumber: string}} $data
+     */
+    public function updateExternalAccounts(array $data): string{
+        return $this->__makeCalls("PUT", "/".self::API_CURRENT_VERSION."/api/bank-account", $data);
+    }
 
+    /**
+     * @param array{address: string, network: string} $data
+     */
+    public function whitelistAddress(array $data): string{
+        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/whitelist-address", $data);
+    }
+
+    public function getWhitelistedAddresses(): string{
+        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/whitelist-address");
+    }
+
+    public function getSupportedNetworks(): string{
+        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/supported-networks");
+    }
+
+    /**
+     * @param array{bankCode: string, accountNumber: string} $data
+     */
+    public function validateAccount(array $data): string{
+        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/account/verify", $data);
+    }
 }
 
