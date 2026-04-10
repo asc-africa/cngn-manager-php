@@ -121,7 +121,7 @@ class CNGnManager implements ICNGnManager {
     }
 
     /**
-     * @param array{amount: int, address: string, network: string, shouldSaveAddress?: bool} $data
+     * @param array{amount: int, address: string, networkId: string, shouldSaveAddress?: bool} $data
      */
     public function withdraw(array $data): string{
         return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/withdraw", $data);
@@ -132,39 +132,34 @@ class CNGnManager implements ICNGnManager {
     }
 
     /**
-     * @param array{destinationNetwork: string, destinationAddress: string, originNetwork: string, callbackUrl: string} $data
+     * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, senderAddress?: string, callbackUrl?: string} $data
      */
-    public function swapAssets(array $data): string{
-        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/swap", $data);
+    public function bridgeAssets(array $data): string{
+        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/bridge", $data);
     }
 
     /**
-     * @param array{destinationNetwork: string, originNetwork: string} $data
+     * @param array{bankName: string, bankAccountName: string, bankAccountNumber: string} $data
      */
-    public function swapQuote(array $data): string{
-        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/swap-quote", $data);
-    }
-
-    /**
-     * @param array{walletAddress?: array{bscAddress?: string, atcAddress?: string, xbnAddress?: string, ethAddress?: string, polygonAddress?: string, tronAddress?: string, baseAddress?: string, bantuUserId?: string}, bankDetails?: array{bankName: string, bankAccountName: string, bankAccountNumber: string}} $data
-     */
-    public function updateExternalAccounts(array $data): string{
+    public function updateBankAccount(array $data): string{
         return $this->__makeCalls("PUT", "/".self::API_CURRENT_VERSION."/api/bank-account", $data);
     }
 
     /**
-     * @param array{address: string, network: string} $data
+     * @param array{address: string, networkId: string} $data
      */
     public function whitelistAddress(array $data): string{
-        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/whitelist-address", $data);
+        return $this->__makeCalls("POST", "/".self::API_CURRENT_VERSION."/api/whitelist", $data);
     }
 
-    public function getWhitelistedAddresses(): string{
-        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/whitelist-address");
+    public function getWhitelistedAddresses(bool $includeNetwork = false): string{
+        $query = $includeNetwork ? '?includeNetwork=true' : '';
+        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/whitelisted".$query);
     }
 
-    public function getSupportedNetworks(): string{
-        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/supported-networks");
+    public function getSupportedNetworks(bool $includeBlockchain = false): string{
+        $query = $includeBlockchain ? '?includeBlockchain=true' : '';
+        return $this->__makeCalls("GET", "/".self::API_CURRENT_VERSION."/api/networks".$query);
     }
 
     /**

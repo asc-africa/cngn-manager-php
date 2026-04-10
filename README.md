@@ -1,3 +1,9 @@
+---
+noteId: "42162a90346b11f1863d074aaebb462f"
+tags: []
+
+---
+
 # CNGnManager
 
 CNGnManager is a PHP library for interacting with the CNGN API. It provides a simple interface for various operations such as checking balance, bridging between chains, depositing for redemption, managing virtual accounts, and more.
@@ -105,18 +111,20 @@ echo $virtualAccount;
 
 ```php
 /**
- * @param array{amount: int, address: string, network: string, shouldSaveAddress?: bool} $data
+ * @param array{amount: int, address: string, networkId: string, shouldSaveAddress?: bool} $data
  */
 $withdrawParams = [
     "amount" => 100,
     "address" => '0x1234...',
-    "network" => Network::BSC,
+    "networkId" => 'network-id-from-supported-networks',
     "shouldSaveAddress" => true,
 ];
 
 $withdrawResult = $manager->withdraw($withdrawParams);
 echo $withdrawResult;
 ```
+
+> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
 
 #### Redeem Asset
 
@@ -137,59 +145,38 @@ echo $redeemResult;
 
 > **NOTE:** Use the `getBanks()` method to fetch the list of banks and their codes.
 
-#### Bridge Assets (Swap)
+#### Bridge Assets
 
 ```php
 /**
- * @param array{destinationNetwork: string, destinationAddress: string, originNetwork: string, callbackUrl: string} $data
+ * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, senderAddress?: string, callbackUrl?: string} $data
  */
-$swapData = [
-    "destinationNetwork" => Network::BSC,
+$bridgeData = [
+    "destinationNetworkId" => 'destination-network-id',
     "destinationAddress" => "0x123....",
-    "originNetwork" => Network::ETH,
+    "originNetworkId" => 'origin-network-id',
     "callbackUrl" => 'https://your-callback-url.com',
 ];
 
-$swapResult = $manager->swapAssets($swapData);
-echo $swapResult;
+$bridgeResult = $manager->bridgeAssets($bridgeData);
+echo $bridgeResult;
 ```
 
-#### Swap Quote
+> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
+
+#### Update Bank Account
 
 ```php
 /**
- * @param array{destinationNetwork: string, originNetwork: string} $data
- */
-$quoteData = [
-    "destinationNetwork" => Network::BSC,
-    "originNetwork" => Network::ETH,
-];
-
-$quote = $manager->swapQuote($quoteData);
-echo $quote;
-```
-
-#### Update External Accounts
-
-Address options:
-- `bscAddress`, `atcAddress`, `xbnAddress`, `ethAddress`, `polygonAddress`, `tronAddress`, `baseAddress`, `bantuUserId`
-
-```php
-/**
- * @param array{walletAddress?: array{bscAddress?: string, ...}, bankDetails?: array{bankName: string, bankAccountName: string, bankAccountNumber: string}} $data
+ * @param array{bankName: string, bankAccountName: string, bankAccountNumber: string} $data
  */
 $updateData = [
-    "walletAddress" => [
-        "bscAddress" => '0x1234...',
-    ],
-    "bankDetails" => [
-        "bankName" => 'Example Bank',
-        "bankAccountName" => 'Test Account',
-        "bankAccountNumber" => '1234567890',
-    ],
+    "bankName" => 'Example Bank',
+    "bankAccountName" => 'Test Account',
+    "bankAccountNumber" => '1234567890',
 ];
 
-$updateResult = $manager->updateExternalAccounts($updateData);
+$updateResult = $manager->updateBankAccount($updateData);
 echo $updateResult;
 ```
 
@@ -197,11 +184,11 @@ echo $updateResult;
 
 ```php
 /**
- * @param array{address: string, network: string} $data
+ * @param array{address: string, networkId: string} $data
  */
 $whitelistData = [
     "address" => '0x1234...',
-    "network" => Network::BSC,
+    "networkId" => 'network-id-from-supported-networks',
 ];
 
 $result = $manager->whitelistAddress($whitelistData);
@@ -213,12 +200,20 @@ echo $result;
 ```php
 $addresses = $manager->getWhitelistedAddresses();
 echo $addresses;
+
+// Include network details
+$addresses = $manager->getWhitelistedAddresses(includeNetwork: true);
+echo $addresses;
 ```
 
 #### Get Supported Networks
 
 ```php
 $networks = $manager->getSupportedNetworks();
+echo $networks;
+
+// Include blockchain details
+$networks = $manager->getSupportedNetworks(includeBlockchain: true);
 echo $networks;
 ```
 

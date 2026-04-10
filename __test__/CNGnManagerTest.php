@@ -136,7 +136,7 @@ final class CNGnManagerTest extends TestCase
     public function getWhitelistedAddresses_makes_GET_request(): void
     {
         $manager = $this->managerWithMockResponses([
-            new RequestException('fail', new Request('GET', '/v1/api/whitelist-address')),
+            new RequestException('fail', new Request('GET', '/v1/api/whitelisted')),
         ]);
 
         $result = json_decode($manager->getWhitelistedAddresses(), true);
@@ -147,7 +147,7 @@ final class CNGnManagerTest extends TestCase
     public function getSupportedNetworks_makes_GET_request(): void
     {
         $manager = $this->managerWithMockResponses([
-            new RequestException('fail', new Request('GET', '/v1/api/supported-networks')),
+            new RequestException('fail', new Request('GET', '/v1/api/networks')),
         ]);
 
         $result = json_decode($manager->getSupportedNetworks(), true);
@@ -166,7 +166,7 @@ final class CNGnManagerTest extends TestCase
         $data = [
             'amount' => 100,
             'address' => '0x1234abcd',
-            'network' => 'bsc',
+            'networkId' => 'clx1network456',
             'shouldSaveAddress' => true,
         ];
 
@@ -193,56 +193,37 @@ final class CNGnManagerTest extends TestCase
     }
 
     #[Test]
-    public function swapAssets_sends_POST_with_data(): void
+    public function bridgeAssets_sends_POST_with_data(): void
     {
         $manager = $this->managerWithMockResponses([
-            new RequestException('fail', new Request('POST', '/v1/api/swap')),
+            new RequestException('fail', new Request('POST', '/v1/api/bridge')),
         ]);
 
         $data = [
-            'destinationNetwork' => 'bsc',
+            'destinationNetworkId' => 'clx1network456',
             'destinationAddress' => '0x1234',
-            'originNetwork' => 'eth',
+            'originNetworkId' => 'clx1network789',
             'callbackUrl' => 'https://example.com/callback',
         ];
 
-        $result = json_decode($manager->swapAssets($data), true);
+        $result = json_decode($manager->bridgeAssets($data), true);
         $this->assertFalse($result['success']);
     }
 
     #[Test]
-    public function swapQuote_sends_POST_with_data(): void
-    {
-        $manager = $this->managerWithMockResponses([
-            new RequestException('fail', new Request('POST', '/v1/api/swap-quote')),
-        ]);
-
-        $data = [
-            'destinationNetwork' => 'bsc',
-            'originNetwork' => 'eth',
-        ];
-
-        $result = json_decode($manager->swapQuote($data), true);
-        $this->assertFalse($result['success']);
-    }
-
-    #[Test]
-    public function updateExternalAccounts_sends_PUT_with_data(): void
+    public function updateBankAccount_sends_PUT_with_data(): void
     {
         $manager = $this->managerWithMockResponses([
             new RequestException('fail', new Request('PUT', '/v1/api/bank-account')),
         ]);
 
         $data = [
-            'walletAddress' => ['bscAddress' => '0x1234'],
-            'bankDetails' => [
-                'bankName' => 'Test Bank',
-                'bankAccountName' => 'John Doe',
-                'bankAccountNumber' => '1234567890',
-            ],
+            'bankName' => 'Test Bank',
+            'bankAccountName' => 'John Doe',
+            'bankAccountNumber' => '1234567890',
         ];
 
-        $result = json_decode($manager->updateExternalAccounts($data), true);
+        $result = json_decode($manager->updateBankAccount($data), true);
         $this->assertFalse($result['success']);
     }
 
@@ -250,10 +231,10 @@ final class CNGnManagerTest extends TestCase
     public function whitelistAddress_sends_POST_with_data(): void
     {
         $manager = $this->managerWithMockResponses([
-            new RequestException('fail', new Request('POST', '/v1/api/whitelist-address')),
+            new RequestException('fail', new Request('POST', '/v1/api/whitelist')),
         ]);
 
-        $data = ['address' => '0xabcdef', 'network' => 'bsc'];
+        $data = ['address' => '0xabcdef', 'networkId' => 'clx1network456'];
 
         $result = json_decode($manager->whitelistAddress($data), true);
         $this->assertFalse($result['success']);
@@ -337,7 +318,6 @@ final class CNGnManagerTest extends TestCase
             new RequestException('fail', new Request('POST', '/test')),
             new RequestException('fail', new Request('POST', '/test')),
             new RequestException('fail', new Request('POST', '/test')),
-            new RequestException('fail', new Request('POST', '/test')),
             new RequestException('fail', new Request('PUT', '/test')),
             new RequestException('fail', new Request('POST', '/test')),
             new RequestException('fail', new Request('POST', '/test')),
@@ -350,12 +330,11 @@ final class CNGnManagerTest extends TestCase
             fn() => $manager->getWhitelistedAddresses(),
             fn() => $manager->getSupportedNetworks(),
             fn() => $manager->getVirtualAccount(),
-            fn() => $manager->withdraw(['amount' => 1, 'address' => '0x', 'network' => 'bsc']),
+            fn() => $manager->withdraw(['amount' => 1, 'address' => '0x', 'networkId' => 'clx1network456']),
             fn() => $manager->redeemAssets(['amount' => 1, 'bankCode' => '011', 'accountNumber' => '123']),
-            fn() => $manager->swapAssets(['destinationNetwork' => 'bsc', 'destinationAddress' => '0x', 'originNetwork' => 'eth', 'callbackUrl' => 'https://x.com']),
-            fn() => $manager->swapQuote(['destinationNetwork' => 'bsc', 'originNetwork' => 'eth']),
-            fn() => $manager->updateExternalAccounts(['walletAddress' => ['bscAddress' => '0x']]),
-            fn() => $manager->whitelistAddress(['address' => '0x', 'network' => 'bsc']),
+            fn() => $manager->bridgeAssets(['destinationNetworkId' => 'clx1network456', 'destinationAddress' => '0x', 'originNetworkId' => 'clx1network789']),
+            fn() => $manager->updateBankAccount(['bankName' => 'Test Bank', 'bankAccountName' => 'John', 'bankAccountNumber' => '123']),
+            fn() => $manager->whitelistAddress(['address' => '0x', 'networkId' => 'clx1network456']),
             fn() => $manager->validateAccount(['bankCode' => '011', 'accountNumber' => '123']),
         ];
 

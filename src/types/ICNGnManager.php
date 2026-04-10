@@ -22,28 +22,23 @@ interface ICNGnManager {
     public function getVirtualAccount(): string;
 
     /**
-     * @param array{walletAddress?: array{bscAddress?: string, atcAddress?: string, xbnAddress?: string, ethAddress?: string, polygonAddress?: string, tronAddress?: string, baseAddress?: string, bantuUserId?: string}, bankDetails?: array{bankName: string, bankAccountName: string, bankAccountNumber: string}} $data
+     * @param array{bankName: string, bankAccountName: string, bankAccountNumber: string} $data
      */
-    public function updateExternalAccounts(array $data): string;
+    public function updateBankAccount(array $data): string;
 
     /**
-     * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, callbackUrl: string} $data
+     * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, senderAddress?: string, callbackUrl?: string} $data
      */
-    public function swapAssets(array $data): string;
-
-    /**
-     * @param array{amount: int, originNetworkId: string, destinationNetworkId: string, destinationAddress: string} $data
-     */
-    public function swapQuote(array $data): string;
+    public function bridgeAssets(array $data): string;
 
     /**
      * @param string $tnxRef
      */
     public function verifyWithdraw(string $tnxRef): string;
 
-    public function getWhitelistedAddresses(): string;
+    public function getWhitelistedAddresses(bool $includeNetwork = false): string;
 
-    public function getSupportedNetworks(): string;
+    public function getSupportedNetworks(bool $includeBlockchain = false): string;
 
     /**
      * @param array{bankCode: string, accountNumber: string} $data
@@ -51,7 +46,7 @@ interface ICNGnManager {
     public function validateAccount(array $data): string;
 
     /**
-     * @param array{address: string, network: string} $data
+     * @param array{address: string, networkId: string} $data
      */
     public function whitelistAddress(array $data): string;
 };
