@@ -1,13 +1,21 @@
+---
+noteId: "42162a90346b11f1863d074aaebb462f"
+tags: []
+
+---
+
 # CNGnManager
 
-CNGnManager is a PHP library for interacting with a CNGN API. It provides a simple interface for various operations such as checking balance, swapping between chains, depositing for redemption, creating virtual accounts, and more.
+CNGnManager is a PHP library for interacting with the CNGN API. It provides a simple interface for various operations such as checking balance, bridging between chains, depositing for redemption, managing virtual accounts, and more.
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Usage](#usage)
+- [Networks](#networks)
 - [Available Methods](#available-methods)
 - [Testing](#testing)
+- [Return Values](#return-values)
 - [Error Handling](#error-handling)
 - [Types](#types)
 - [Security](#security)
@@ -25,231 +33,268 @@ composer require wrappedcbdc/cngn-php-library
 
 ## Usage
 
-First, import the `CNGnManager` class using it namespace WrappedCBDC\CNGNManager: and all necessary constants.
+First, import the `CNGnManager` class using its namespace.
 
 ```php
 <?php declare(strict_types=1);
-    require __DIR__ ."/vendor/autoload.php";
-    use WrappedCBDC\CNGnManager;
-    use WrappedCBDC\constants\{Network, ProviderType};
+
+require __DIR__ . '/vendor/autoload.php';
+
+use WrappedCBDC\CNGnManager;
 ```
 
-Then, create an instance of `CNGnManager` with your secrets:
+Then, create an instance of `CNGnManager` with your credentials:
 
 ```php
-$apiKey = "cngn_live_sk**********";
-$encryptionKey = "yourencryptionkey";
-$sshPrivateKey = "-----BEGIN OPENSSH PRIVATE KEY-----
-your ssh key
------END OPENSSH PRIVATE KEY-----";
+// Replace these with your actual credentials
+$apiKey        = 'cngn_live_sk**********';
+$encryptionKey = 'your-encryption-key';
+$privateKey    = file_get_contents('/path/to/your/private-key.pem');
 
-#NOTE: You can as well get your private key from a file using
-$sshPrivateKey = file_get_contents("/path/to/sshkey.key");
+// Or inline:
+// $privateKey = "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----";
 
-$manager = new CNGnManager($apiKey, $sshPrivateKey, $encryptionKey);
-
-// Example: Get balance
-$balance = $manager->getBalance();
-echo $balance;
+$manager = new CNGnManager($apiKey, $privateKey, $encryptionKey);
 ```
+
+Optionally define a small helper to print results during development:
+
+```php
+function printResult(string $label, string $json): void
+{
+    echo "\n━━━ $label ━━━\n";
+    $decoded = json_decode($json, true);
+    echo json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+}
+```
+
+> See [`example.php`](example.php) for a runnable script that calls every endpoint below.
+
 ## Networks
 
 The library supports multiple blockchain networks:
 
-- `Network.BSC` - Binance Smart Chain
-- `Network.ATC` - Asset Chain
-- `Network.XBN` - Bantu Chain
-- `Network.ETTH` - Ethereum
-- `Network.MATIC` - Polygon (Matic)
-- `Network.TRX` - Tron
-- `Network.BASE` - Base
-
+- `Network::BSC` - Binance Smart Chain
+- `Network::ATC` - Asset Chain
+- `Network::XBN` - Bantu Chain
+- `Network::ETH` - Ethereum
+- `Network::MATIC` - Polygon (Matic)
+- `Network::TRX` - Tron
+- `Network::BASE` - Base
 
 ## Available Methods
 
-### cNGNManager Methods
+### CNGnManager Methods
 
-#### Get Balance
+The examples below mirror [`example.php`](example.php) and use the `printResult()` helper from the [Usage](#usage) section. Replace `printResult()` with `echo` if you don't need pretty-printed output.
 
-```php
-$balance = $manager->getBalance();
-echo $balance;
-```
+### GET Endpoints
 
-#### Get Transaction History
+#### 1. Get Balance
 
 ```php
-$page = 1;
-$limit = 10;
-$transactions = $manager->getTransactionHistory($page, $limit);
-echo $transaction;
+printResult('Get Balance', $manager->getBalance());
 ```
 
-#### Withdraw from chains
+#### 2. Get Transaction History
 
 ```php
-$swapParams = [
-    "amount"=> 100,
-    "address" => '0x1234...',
-    "network" => Network::BSC,
-    "shouldSaveAddress" => true
-];
-
-$swapResult =  $manager->withdraw($swapParams);
-echo $swapResult;
+// page 1, 10 per page
+printResult('Transaction History', $manager->getTransactionHistory(1, 10));
 ```
 
-#### Redeem Asset
+#### 3. Get Banks
 
 ```php
-$depositParams = [
-    "amount"=> 1000,
-    "bankCode"=> '011',
-    "accountNumber"=> '1234567890'
-    "saveDetails" => true
-];
-
-$depositResult = $manager->redeemAssets($depositParams);
-echo $depositResult;
+printResult('Get Banks', $manager->getBanks());
 ```
-NOTE: to get bank codes please use the getBanks method to fetch the list of banks and ther codes 
 
-#### Create Virtual Account
+#### 4. Get Virtual Account
 
 ```php
-$mintParams = [
-    "provider"=> ProviderType::KORAPAY,
-    "bank_code" => '011'
-];
-
-$virtualAccount = $manager->createVirtualAccount($mintParams);
-echo $virtualAccount;
+printResult('Get Virtual Account', $manager->getVirtualAccount());
 ```
-NOTE: before creating the virtual account you need to have updated your BVN on the dashboard
 
-
-#### Bridge Assets 
+#### 5. Get Supported Networks
 
 ```php
-$swapData = [
-    "destinationNetwork"=> Network::BSC,
-    "destinationAddress" => "0x123....",
-    "originNetwork" => Network::ETH
-    "callbackUrl" => 'https://your-callback-url.com'
-];
+printResult('Get Supported Networks', $manager->getSupportedNetworks());
 
-$swapResult = $manager->swapAsset($swapData);
-echo $swapResult;
+// With blockchain details
+printResult('Get Supported Networks (with blockchain)', $manager->getSupportedNetworks(includeBlockchain: true));
 ```
-NOTE: before creating the virtual account you need to have updated your BVN on the dashboard
 
-
-
-#### Update Business
-
-Address Options:
-- "xbnAddress": "string";
-- "bscAddress": "string";
-- "atcAddress": "string";
-- "polygonAddress": "string";
-- "ethAddress": "string";
-- "tronAddress": "string";
-- "baseAddress": "string";
-- "bantuUserId": "string";
+#### 6. Get Whitelisted Addresses
 
 ```php
-$updateData: [
-    "walletAddress" => [
-        "bscAddress" => '0x1234...',
-    ],
-    "bankDetails" => [
-        "bankName" => 'Example Bank',
-        "bankAccountName" => 'Test Account',
-        "bankAccountNumber" => '1234567890'
-    ]
-];
+printResult('Get Whitelisted Addresses', $manager->getWhitelistedAddresses());
 
-$updateResult = $manager->updateExternalAccounts($updateData);
-echo $updateResult;
+// With network details
+printResult('Get Whitelisted Addresses (with network)', $manager->getWhitelistedAddresses(includeNetwork: true));
 ```
 
-#### Get banks
+#### 7. Verify Withdrawal
+
 ```php
-
-$banklist = $manager->getBanks();
-print($banklist)
-
+printResult('Verify Withdrawal', $manager->verifyWithdraw('WTH-your-transaction-ref'));
 ```
 
-### WalletManager Methods
+### POST / PUT Endpoints
 
-#### Generate Wallet Address
-Not Available a the moment 
-<!-- ```python
-    wallet = WalletManager.generate_wallet_address(Network.bsc);
-```
+#### 8. Validate Account
 
-Response format:
 ```php
- {
-    "mnemonic" : "string";
-    "address": "string";
-    "network": Network;
-    "privateKey": "string";
-}
-``` -->
+/**
+ * @param array{bankCode: string, accountNumber: string} $data
+ */
+printResult('Validate Account', $manager->validateAccount([
+    'bankCode'      => '044',
+    'accountNumber' => '0123456789',
+]));
+```
 
+> **NOTE:** Use the `getBanks()` method to fetch the list of banks and their codes.
+
+#### 9. Redeem Assets
+
+```php
+/**
+ * @param array{amount: int, bankCode: string, accountNumber: string, saveDetails?: bool} $data
+ */
+printResult('Redeem Assets', $manager->redeemAssets([
+    'amount'        => 1000,
+    'bankCode'      => '044',
+    'accountNumber' => '0123456789',
+    'saveDetails'   => false,
+]));
+```
+
+> **NOTE:** Use the `getBanks()` method to fetch the list of banks and their codes.
+
+#### 10. Withdraw (cNGN to external wallet)
+
+```php
+/**
+ * @param array{amount: int, address: string, networkId: string, shouldSaveAddress?: bool} $data
+ */
+// Use a networkId from getSupportedNetworks()
+printResult('Withdraw', $manager->withdraw([
+    'amount'            => 100,
+    'address'           => '0xYourWalletAddress',
+    'networkId'         => 'your-network-id',
+    'shouldSaveAddress' => false,
+]));
+```
+
+> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
+
+#### 11. Bridge Assets
+
+```php
+/**
+ * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, senderAddress?: string, callbackUrl?: string} $data
+ */
+// Use networkIds from getSupportedNetworks()
+printResult('Bridge Assets', $manager->bridgeAssets([
+    'destinationNetworkId' => 'destination-network-id',
+    'destinationAddress'   => '0xDestinationAddress',
+    'originNetworkId'      => 'origin-network-id',
+    'callbackUrl'          => 'https://your-domain.com/webhook',
+]));
+```
+
+> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
+
+#### 12. Whitelist Address
+
+```php
+/**
+ * @param array{address: string, networkId: string} $data
+ */
+// Use a networkId from getSupportedNetworks()
+printResult('Whitelist Address', $manager->whitelistAddress([
+    'address'   => '0xAddressToWhitelist',
+    'networkId' => 'your-network-id',
+]));
+```
+
+#### 13. Update Bank Account
+
+```php
+/**
+ * @param array{bankName: string, bankAccountName: string, bankAccountNumber: string} $data
+ */
+printResult('Update Bank Account', $manager->updateBankAccount([
+    'bankName'          => 'Access Bank',
+    'bankAccountName'   => 'John Doe Enterprises',
+    'bankAccountNumber' => '0123456789',
+]));
+```
 
 ## Testing
 
-This project uses Jest for testing. To run the tests, follow these steps:
+This project uses PHPUnit for testing. To run the tests:
 
-1. Run the test command:
+```bash
+composer run test
+```
 
-   ```bash
-   composer run test
-   ```
-
-   This will run all tests in the `__tests__` directory.
+This will run all tests in the `__test__` directory.
 
 ### Test Structure
 
-The tests are located in the `__tests__` directory. They cover various aspects of the CNGnManager class, including:
+The tests are located in the `__test__` directory and cover:
 
-- API calls for different endpoints (GET and POST requests)
-- Encryption and decryption of data
-- Error handling for various scenarios
+- All GET and POST/PUT endpoint calls
+- Encryption and decryption (AESCrypto round-trip)
+- Error handling (client exceptions, network errors, unexpected errors)
+- JSON return format validation for all methods
 
 ## Return Values
 
-All responses are returned as a Json string you have to decode it to an object with; `$data = json_decode($response)` or to an array with; `$data = json_decode($response, true)` .
+All responses are returned as JSON strings. Decode them with:
+
+```php
+$data = json_decode($response);        // as object
+$data = json_decode($response, true);  // as array
+```
 
 ## Error Handling
 
-The library uses a custom error handling mechanism. All API errors are caught and thrown as `Error` objects with descriptive messages.
+The library catches all API errors and returns them as JSON strings with error details instead of throwing exceptions:
+
+```json
+{
+    "success": false,
+    "error": "API request failed",
+    "message": "Error description",
+    "status_code": 400
+}
+```
 
 ## Types
 
-The library includes python constant classes for all parameters:
+The library includes PHP constant classes for all parameters:
 
-- `Network` - token network
-- `AssetType` - Asset constants
-- `ProviderType` - provider constants
+- `Network` - blockchain network constants
+- `AssetType` - asset type constants (`FIAT`, `WRAPPED`, `ENAIRA`)
+- `ProviderType` - provider constants (`KORAPAY`, `BUDPAY`)
+
+All methods accepting `array $data` include PHPDoc `@param` annotations with typed array shapes for IDE autocompletion.
 
 ## Security
 
-This library uses AES encryption for request payloads and Ed25519 decryption for response data. Ensure that your `encryptionKey` and `privateKey` are kept secure.
+This library uses AES-256-CBC encryption for request payloads and Ed25519 (Curve25519) decryption for response data. Ensure that your `encryptionKey` and `privateKey` are kept secure.
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. Feel free to check [issues page](https://github.com/wrappedcbdc/cngn-php-library/issues) if you want to contribute.
+Contributions, issues, and feature requests are welcome. Feel free to check the [issues page](https://github.com/wrappedcbdc/cngn-php-library/issues) if you want to contribute.
 
 To contribute:
 1. Fork the repository
 2. Create a feature branch
 3. Commit your changes
 4. Create a Pull Request
-
 
 ## Support
 

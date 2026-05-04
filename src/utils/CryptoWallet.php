@@ -4,324 +4,259 @@ namespace WrappedCBDC\utils;
 
 use Exception;
 use kornrunner\Keccak;
-use BitWasp\Bitcoin\Mnemonic\Bip39\Bip39SeedGenerator;
-use BitWasp\Bitcoin\Mnemonic\MnemonicFactory;
-use BitWasp\Bitcoin\Key\Factory\HierarchicalKeyFactory;
-use BitWasp\Bitcoin\Network\NetworkFactory;
-use BitWasp\Buffertools\Buffer;
-use kornrunner\Secp256k1;
-use ParagonIE\Sodium\Core\Ed25519;
+use Mdanter\Ecc\EccFactory;
+use Mdanter\Ecc\Serializer\Point\UncompressedPointSerializer;
+use Soneso\StellarSDK\Crypto\KeyPair;
+use Soneso\StellarSDK\SEP\Derivation\Mnemonic;
 
 class CryptoWallet
 {
     private const DERIVATION_PATHS = [
-        'ETH' => "m/44'/60'/0'/0/0",
-        'BSC' => "m/44'/60'/0'/0/0",
-        'ATC' => "m/44'/60'/0'/0/0",
+        'ETH'   => "m/44'/60'/0'/0/0",
+        'BSC'   => "m/44'/60'/0'/0/0",
+        'ATC'   => "m/44'/60'/0'/0/0",
         'MATIC' => "m/44'/60'/0'/0/0",
-        'TRX' => "m/44'/195'/0'/0/0",
-        'XBN' => "m/44'/703'/0'/0"
+        'BASE'  => "m/44'/60'/0'/0/0",
+        'TRX'   => "m/44'/195'/0'/0/0",
+        'XBN'   => "m/44'/148'/0'",
     ];
 
-    // TRON address constants
     private const TRON_ADDRESS_PREFIX = '41';
-    private const TRON_ADDRESS_SIZE = 21;
 
+    /**
+     * Generate a new HD wallet with a fresh mnemonic for the given network.
+     */
     public static function generateWalletWithMnemonicDetails(string $network): array
     {
-        $bip39 = MnemonicFactory::bip39();
-        $mnemonic = $bip39->create(128);
-        return self::generateWalletFromMnemonic($mnemonic->getWords(), $network);
+        $network = strtoupper($network);
+        self::assertSupportedNetwork($network);
+
+        $mnemonic = Mnemonic::generate12WordsMnemonic();
+        $words = implode(' ', $mnemonic->words);
+
+        return self::generateWalletFromMnemonic($words, $network);
     }
 
-    public static function generateWalletFromMnemonic(string $mnemonic, string $network): array
+    /**
+     * Restore / derive a wallet from an existing mnemonic phrase.
+     */
+    public static function generateWalletFromMnemonic(string $mnemonicPhrase, string $network): array
     {
+        $network = strtoupper($network);
+        self::assertSupportedNetwork($network);
+
         if ($network === 'XBN') {
-            return self::generateXbnWallet($mnemonic);
-        } elseif ($network === 'TRX') {
-            return self::generateTrxWallet($mnemonic);
+            return self::generateXbnWallet($mnemonicPhrase);
         }
 
-        $privateKey = self::getPrivateKeyFromMnemonic($mnemonic, $network);
-        $publicKey = self::getPublicKey($privateKey, $network);
-        $address = self::getAddressFromPublicKey($publicKey, $network);
+        $privateKey = self::derivePrivateKey($mnemonicPhrase, $network);
+        $publicKey  = self::getPublicKeyUncompressed($privateKey);
+        $address    = self::deriveAddress($publicKey, $network);
 
         return [
-            'mnemonic' => $mnemonic,
+            'mnemonic'   => $mnemonicPhrase,
             'privateKey' => $privateKey,
-            'address' => $address,
-            'network' => $network
+            'address'    => $address,
+            'network'    => $network,
         ];
     }
 
-    public static function getPublicKey(string $privateKey, string $network): string
+    // ──────────────────────────────────────────────────────────────────────────
+    //  BIP-32 HD key derivation for secp256k1 chains
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Derive a private key from a mnemonic using BIP-32/BIP-44 derivation.
+     */
+    private static function derivePrivateKey(string $mnemonicPhrase, string $network): string
     {
-        if ($network === 'XBN') {
-            $secretKey = hex2bin($privateKey);
-            $keypair = sodium_crypto_sign_seed_keypair($secretKey);
-            return bin2hex(sodium_crypto_sign_publickey($keypair));
-        }
+        // BIP-39 seed (64 bytes)
+        $seed = hash_pbkdf2('sha512', $mnemonicPhrase, 'mnemonic', 2048, 64, true);
 
-        $secp256k1 = new Secp256k1();
-        $publicKey = $secp256k1->publicKey($privateKey, true);
-        return $publicKey;
-    }
-
-    public static function getPrivateKeyFromMnemonic(string $mnemonic, string $network): string
-    {
-        $bip39 = MnemonicFactory::bip39();
-        $seedGenerator = new Bip39SeedGenerator();
-        $seed = $seedGenerator->getSeed($mnemonic);
-
-        $factory = new HierarchicalKeyFactory();
-        $master = $factory->fromEntropy($seed);
+        // BIP-32 master key
+        $hmac       = hash_hmac('sha512', $seed, 'Bitcoin seed', true);
+        $masterKey  = substr($hmac, 0, 32);
+        $chainCode  = substr($hmac, 32, 32);
 
         $path = self::DERIVATION_PATHS[$network];
-        $key = $master;
+        $segments = self::parsePath($path);
 
-        foreach (explode('/', substr($path, 1)) as $segment) {
-            if (substr($segment, -1) === "'") {
-                $hardened = true;
-                $segment = substr($segment, 0, -1);
-            } else {
-                $hardened = false;
-            }
-            
-            $index = (int)$segment;
+        $key   = $masterKey;
+        $chain = $chainCode;
+
+        $generator = EccFactory::getSecgCurves()->generator256k1();
+        $order     = $generator->getOrder();
+
+        foreach ($segments as [$index, $hardened]) {
             if ($hardened) {
-                $index += 0x80000000;
+                // Hardened child: HMAC-SHA512(chainCode, 0x00 || key || index)
+                $data = "\x00" . $key . pack('N', $index + 0x80000000);
+            } else {
+                // Normal child: HMAC-SHA512(chainCode, serP(point(key)) || index)
+                $point = $generator->mul(gmp_init(bin2hex($key), 16));
+                $serializer = new UncompressedPointSerializer();
+                $pubHex = $serializer->serialize($point);
+                // Compress the public key (02/03 prefix + 32-byte x)
+                $compressed = self::compressPublicKey($pubHex);
+                $data = hex2bin($compressed) . pack('N', $index);
             }
-            
-            $key = $key->deriveChild($index);
+
+            $hmac  = hash_hmac('sha512', $data, $chain, true);
+            $il    = gmp_init(bin2hex(substr($hmac, 0, 32)), 16);
+            $chain = substr($hmac, 32, 32);
+
+            $parentInt = gmp_init(bin2hex($key), 16);
+            $childInt  = gmp_mod(gmp_add($il, $parentInt), $order);
+
+            $key = hex2bin(str_pad(gmp_strval($childInt, 16), 64, '0', STR_PAD_LEFT));
         }
 
-        return $key->getPrivateKey()->getHex();
+        return bin2hex($key);
     }
 
-    public static function getAddressFromPublicKey(string $publicKey, string $network): string
+    /**
+     * Parse a BIP-44 derivation path string into segments.
+     * Returns array of [index, hardened] pairs.
+     */
+    private static function parsePath(string $path): array
     {
-        if (in_array($network, ['ETH', 'BSC', 'MATIC', 'ATC'])) {
-            return self::getEthereumStyleAddress($publicKey);
-        } elseif ($network === 'TRX') {
-            return self::getTronAddressFromPublicKey($publicKey);
+        $parts = explode('/', $path);
+        array_shift($parts); // remove 'm'
+
+        $segments = [];
+        foreach ($parts as $part) {
+            $hardened = str_ends_with($part, "'");
+            $index = (int) rtrim($part, "'");
+            $segments[] = [$index, $hardened];
+        }
+        return $segments;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Public key & address derivation
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Get uncompressed public key hex (with 04 prefix) from a private key hex.
+     */
+    private static function getPublicKeyUncompressed(string $privateKeyHex): string
+    {
+        $generator  = EccFactory::getSecgCurves()->generator256k1();
+        $point      = $generator->mul(gmp_init($privateKeyHex, 16));
+        $serializer = new UncompressedPointSerializer();
+        return $serializer->serialize($point);
+    }
+
+    /**
+     * Compress an uncompressed public key (04 || x || y) to (02/03 || x).
+     */
+    private static function compressPublicKey(string $uncompressedHex): string
+    {
+        // Remove 04 prefix
+        $xy = substr($uncompressedHex, 2);
+        $x  = substr($xy, 0, 64);
+        $y  = substr($xy, 64, 64);
+
+        $prefix = (gmp_intval(gmp_mod(gmp_init($y, 16), gmp_init(2))) === 0) ? '02' : '03';
+        return $prefix . $x;
+    }
+
+    /**
+     * Derive the blockchain address from an uncompressed public key.
+     */
+    private static function deriveAddress(string $publicKeyHex, string $network): string
+    {
+        if (in_array($network, ['ETH', 'BSC', 'MATIC', 'ATC', 'BASE'], true)) {
+            return self::getEthereumStyleAddress($publicKeyHex);
         }
 
-        throw new Exception("Unsupported network: {$network}");
+        if ($network === 'TRX') {
+            return self::getTronAddress($publicKeyHex);
+        }
+
+        throw new Exception("Unsupported network for address derivation: {$network}");
     }
 
-    public static function getEthereumStyleAddress(string $publicKey): string
+    /**
+     * EIP-55 checksummed Ethereum-style address from uncompressed public key.
+     */
+    private static function getEthereumStyleAddress(string $publicKeyHex): string
     {
-        $cleanPublicKey = substr($publicKey, 0, 2) === '04' ? substr($publicKey, 2) : $publicKey;
-        $hash = Keccak::hash(hex2bin($cleanPublicKey), 256);
+        // Strip the 04 prefix
+        $clean = (substr($publicKeyHex, 0, 2) === '04') ? substr($publicKeyHex, 2) : $publicKeyHex;
+        $hash  = Keccak::hash(hex2bin($clean), 256);
         return '0x' . substr($hash, -40);
     }
 
-    public static function generateTrxWallet(string $mnemonic): array
+    /**
+     * TRON Base58Check address from uncompressed public key.
+     */
+    private static function getTronAddress(string $publicKeyHex): string
     {
-        $privateKey = self::getPrivateKeyFromMnemonic($mnemonic, 'TRX');
-        $publicKey = self::getPublicKey($privateKey, 'TRX');
-        $address = self::getTronAddressFromPublicKey($publicKey);
+        $clean = (substr($publicKeyHex, 0, 2) === '04') ? substr($publicKeyHex, 2) : $publicKeyHex;
+        $hash  = Keccak::hash(hex2bin($clean), 256);
 
-        return [
-            'mnemonic' => $mnemonic,
-            'privateKey' => $privateKey,
-            'address' => $address,
-            'network' => 'TRX'
-        ];
-    }
-
-    public static function getTronAddressFromPublicKey(string $publicKey): string
-    {
-        // Remove '04' prefix if present
-        $pubKeyBinary = hex2bin(substr($publicKey, 0, 2) === '04' ? substr($publicKey, 2) : $publicKey);
-        
-        // Get Keccak-256 hash
-        $hash = Keccak::hash($pubKeyBinary, 256);
-        
-        // Take last 20 bytes
-        $hash = substr($hash, -40);
-        
-        // Add TRON prefix
-        $addressHex = self::TRON_ADDRESS_PREFIX . $hash;
-        
-        // Calculate checksum (double SHA256)
+        // Take last 20 bytes and prepend TRON prefix
+        $addressHex = self::TRON_ADDRESS_PREFIX . substr($hash, -40);
         $addressBin = hex2bin($addressHex);
-        $hash1 = hash('sha256', $addressBin, true);
-        $hash2 = hash('sha256', $hash1, true);
-        $checksum = substr($hash2, 0, 4);
-        
-        // Combine address and checksum
-        $binaryAddress = $addressBin . $checksum;
-        
-        // Convert to Base58
-        return self::base58Encode($binaryAddress);
+
+        // Double SHA-256 checksum
+        $checksum = substr(hash('sha256', hash('sha256', $addressBin, true), true), 0, 4);
+
+        return self::base58Encode($addressBin . $checksum);
     }
 
-    public static function generateXbnWallet(string $mnemonic): array
+    // ──────────────────────────────────────────────────────────────────────────
+    //  XBN / Stellar wallet (Ed25519, using Stellar SDK)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private static function generateXbnWallet(string $mnemonicPhrase): array
     {
-        $seed = (new Bip39SeedGenerator())->getSeed($mnemonic);
-        $factory = new HierarchicalKeyFactory();
-        $master = $factory->fromEntropy($seed);
-
-        $path = self::DERIVATION_PATHS['XBN'];
-        $key = $master;
-
-        foreach (explode('/', substr($path, 1)) as $segment) {
-            if (substr($segment, -1) === "'") {
-                $index = (int)substr($segment, 0, -1) + 0x80000000;
-            } else {
-                $index = (int)$segment;
-            }
-            $key = $key->deriveChild($index);
-        }
-
-        $privateKey = $key->getPrivateKey()->getHex();
-        
-        // Generate Ed25519 keypair
-        $secretKey = hex2bin($privateKey);
-        $keypair = sodium_crypto_sign_seed_keypair($secretKey);
-        $publicKey = sodium_crypto_sign_publickey($keypair);
-        
-        // Generate XBN address (using stellar-style encoding)
-        $address = self::encodeXbnAddress($publicKey);
+        $mnemonic = Mnemonic::mnemonicFromWords($mnemonicPhrase);
+        $keyPair  = KeyPair::fromMnemonic($mnemonic, 0);
 
         return [
-            'mnemonic' => $mnemonic,
-            'privateKey' => $privateKey,
-            'address' => $address,
-            'network' => 'XBN'
+            'mnemonic'   => $mnemonicPhrase,
+            'privateKey' => $keyPair->getSecretSeed(),
+            'address'    => $keyPair->getAccountId(),
+            'network'    => 'XBN',
         ];
     }
 
-    private static function encodeXbnAddress(string $publicKey): string
-    {
-        // XBN uses a similar format to Stellar
-        $version = chr(48); // 'G' version byte
-        $payload = $version . $publicKey;
-        
-        // Calculate checksum (CRC16-XModem)
-        $crc = self::calculateCrc16Xmodem($payload);
-        $binary = $payload . pack('n', $crc);
-        
-        // Base32 encode the result
-        return self::base32Encode($binary);
-    }
-
-    private static function calculateCrc16Xmodem(string $buffer): int
-    {
-        $crc = 0x0000;
-        $polynomial = 0x1021;
-
-        foreach (str_split($buffer) as $byte) {
-            $crc ^= (ord($byte) << 8);
-            for ($i = 0; $i < 8; $i++) {
-                if ($crc & 0x8000) {
-                    $crc = (($crc << 1) & 0xFFFF) ^ $polynomial;
-                } else {
-                    $crc = ($crc << 1) & 0xFFFF;
-                }
-            }
-        }
-
-        return $crc;
-    }
-
-    private static function base32Encode(string $data): string
-    {
-        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-        $binary = '';
-        $binaryLength = 0;
-        $result = '';
-
-        foreach (str_split($data) as $char) {
-            $binary .= str_pad(decbin(ord($char)), 8, '0', STR_PAD_LEFT);
-            $binaryLength += 8;
-
-            while ($binaryLength >= 5) {
-                $chunk = substr($binary, 0, 5);
-                $binary = substr($binary, 5);
-                $binaryLength -= 5;
-                $result .= $alphabet[bindec($chunk)];
-            }
-        }
-
-        if ($binaryLength > 0) {
-            $chunk = str_pad($binary, 5, '0', STR_PAD_RIGHT);
-            $result .= $alphabet[bindec($chunk)];
-        }
-
-        return $result;
-    }
-
-    private static function base58Encode(string $data): string
-    {
-        $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-        $base = strlen($alphabet);
-
-        // Convert binary data to decimal
-        $decimal = 0;
-        $length = strlen($data);
-        for ($i = 0; $i < $length; $i++) {
-            $decimal = $decimal * 256 + ord($data[$i]);
-        }
-
-        // Convert decimal to base58
-        $result = '';
-        while ($decimal >= $base) {
-            $div = intdiv($decimal, $base);
-            $mod = $decimal % $base;
-            $result = $alphabet[$mod] . $result;
-            $decimal = $div;
-        }
-        $result = $alphabet[$decimal] . $result;
-
-        // Add leading zeros
-        for ($i = 0; $i < $length && $data[$i] === "\x00"; $i++) {
-            $result = $alphabet[0] . $result;
-        }
-
-        return $result;
-    }
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Address validation
+    // ──────────────────────────────────────────────────────────────────────────
 
     public static function validateAddress(string $address, string $network): bool
     {
+        $network = strtoupper($network);
+
         switch ($network) {
             case 'ETH':
             case 'BSC':
             case 'MATIC':
             case 'ATC':
+            case 'BASE':
                 return preg_match('/^0x[a-fA-F0-9]{40}$/', $address) === 1;
 
             case 'TRX':
                 if (strlen($address) !== 34) return false;
                 try {
-                    $decoded = self::base58Decode($address);
+                    $decoded  = self::base58Decode($address);
                     if (strlen($decoded) !== 25) return false;
-                    
-                    // Check prefix
                     if (substr($decoded, 0, 1) !== hex2bin(self::TRON_ADDRESS_PREFIX)) return false;
-                    
-                    // Verify checksum
-                    $body = substr($decoded, 0, -4);
+                    $body     = substr($decoded, 0, -4);
                     $checksum = substr($decoded, -4);
-                    $hash1 = hash('sha256', $body, true);
-                    $hash2 = hash('sha256', $hash1, true);
-                    return substr($hash2, 0, 4) === $checksum;
+                    return substr(hash('sha256', hash('sha256', $body, true), true), 0, 4) === $checksum;
                 } catch (Exception $e) {
                     return false;
                 }
 
             case 'XBN':
-                if (strlen($address) !== 56) return false;
                 try {
-                    $binary = self::base32Decode($address);
-                    if (strlen($binary) !== 37) return false;
-                    
-                    $payload = substr($binary, 0, -2);
-                    $checksum = unpack('n', substr($binary, -2))[1];
-                    
-                    return self::calculateCrc16Xmodem($payload) === $checksum;
-                } catch (Exception $e) {
+                    KeyPair::fromAccountId($address);
+                    return true;
+                } catch (\Throwable $e) {
                     return false;
                 }
 
@@ -330,62 +265,65 @@ class CryptoWallet
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Base58 encode / decode
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private static function base58Encode(string $data): string
+    {
+        $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+        $decimal = gmp_init(bin2hex($data), 16);
+        $result  = '';
+
+        while (gmp_cmp($decimal, 0) > 0) {
+            [$decimal, $mod] = gmp_div_qr($decimal, 58);
+            $result = $alphabet[gmp_intval($mod)] . $result;
+        }
+
+        // Preserve leading zero bytes
+        for ($i = 0; $i < strlen($data) && $data[$i] === "\x00"; $i++) {
+            $result = $alphabet[0] . $result;
+        }
+
+        return $result;
+    }
+
     private static function base58Decode(string $data): string
     {
         $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-        $base = strlen($alphabet);
 
-        // Convert base58 to decimal
-        $decimal = 0;
-        $length = strlen($data);
-        for ($i = 0; $i < $length; $i++) {
-            $pos = strpos($alphabet, $data[$i]);
+        $decimal = gmp_init(0);
+        foreach (str_split($data) as $char) {
+            $pos = strpos($alphabet, $char);
             if ($pos === false) {
-                throw new Exception('Invalid character found');
+                throw new Exception('Invalid Base58 character');
             }
-            $decimal = $decimal * $base + $pos;
+            $decimal = gmp_add(gmp_mul($decimal, 58), $pos);
         }
 
-        // Convert decimal to binary
-        $result = '';
-        while ($decimal > 0) {
-            $div = intdiv($decimal, 256);
-            $mod = $decimal % 256;
-            $result = chr($mod) . $result;
-            $decimal = $div;
+        $hex = gmp_strval($decimal, 16);
+        if (strlen($hex) % 2 !== 0) {
+            $hex = '0' . $hex;
         }
+        $result = hex2bin($hex);
 
-        // Add leading zeros
-        for ($i = 0; $i < $length && $data[$i] === $alphabet[0]; $i++) {
+        // Restore leading zero bytes
+        for ($i = 0; $i < strlen($data) && $data[$i] === $alphabet[0]; $i++) {
             $result = "\x00" . $result;
         }
 
         return $result;
     }
 
-    private static function base32Decode(string $data): string
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private static function assertSupportedNetwork(string $network): void
     {
-        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-        $binary = '';
-        
-        foreach (str_split($data) as $char) {
-            $pos = strpos($alphabet, $char);
-            if ($pos === false) {
-                throw new Exception('Invalid character found');
-            }
-            $binary .= str_pad(decbin($pos), 5, '0', STR_PAD_LEFT);
+        if (!isset(self::DERIVATION_PATHS[$network])) {
+            throw new Exception("Unsupported network: {$network}. Supported: " . implode(', ', array_keys(self::DERIVATION_PATHS)));
         }
-
-        $result = '';
-        $chunks = str_split($binary, 8);
-        foreach ($chunks as $chunk) {
-            if (strlen($chunk) < 8) {
-                break;
-            }
-            $result .= chr(bindec($chunk));
-        }
-
-        return $result;
     }
 }
-?>
