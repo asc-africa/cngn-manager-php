@@ -1,10 +1,19 @@
 <?php
 declare(strict_types=1);
+
 namespace WrappedCBDC\types;
 
-use WrappedCBDC\constants\AssetType;
-use WrappedCBDC\constants\Network;
+interface IWalletManager
+{
+    /**
+     * Generate a new HD wallet for the given network.
+     * Returns: ['mnemonic' => string, 'privateKey' => string, 'address' => string, 'network' => string]
+     */
+    public function generateWallet(string $network): array;
 
-interface IWalletManager{
-    public function generateWallet(Network $network);
+    /**
+     * Restore a wallet from an existing mnemonic phrase.
+     * Returns: ['mnemonic' => string, 'privateKey' => string, 'address' => string, 'network' => string]
+     */
+    public function generateWalletFromMnemonic(string $mnemonic, string $network): array;
 }

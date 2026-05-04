@@ -33,33 +33,42 @@ composer require wrappedcbdc/cngn-php-library
 
 ## Usage
 
-First, import the `CNGnManager` class using its namespace and all necessary constants.
+First, import the `CNGnManager` class using its namespace.
 
 ```php
 <?php declare(strict_types=1);
-    require __DIR__ ."/vendor/autoload.php";
-    use WrappedCBDC\CNGnManager;
-    use WrappedCBDC\constants\{Network, ProviderType};
+
+require __DIR__ . '/vendor/autoload.php';
+
+use WrappedCBDC\CNGnManager;
 ```
 
-Then, create an instance of `CNGnManager` with your secrets:
+Then, create an instance of `CNGnManager` with your credentials:
 
 ```php
-$apiKey = "cngn_live_sk**********";
-$encryptionKey = "yourencryptionkey";
-$sshPrivateKey = "-----BEGIN OPENSSH PRIVATE KEY-----
-your ssh key
------END OPENSSH PRIVATE KEY-----";
+// Replace these with your actual credentials
+$apiKey        = 'cngn_live_sk**********';
+$encryptionKey = 'your-encryption-key';
+$privateKey    = file_get_contents('/path/to/your/private-key.pem');
 
-// NOTE: You can also get your private key from a file
-$sshPrivateKey = file_get_contents("/path/to/sshkey.key");
+// Or inline:
+// $privateKey = "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----";
 
-$manager = new CNGnManager($apiKey, $sshPrivateKey, $encryptionKey);
-
-// Example: Get balance
-$balance = $manager->getBalance();
-echo $balance;
+$manager = new CNGnManager($apiKey, $privateKey, $encryptionKey);
 ```
+
+Optionally define a small helper to print results during development:
+
+```php
+function printResult(string $label, string $json): void
+{
+    echo "\n━━━ $label ━━━\n";
+    $decoded = json_decode($json, true);
+    echo json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+}
+```
+
+> See [`example.php`](example.php) for a runnable script that calls every endpoint below.
 
 ## Networks
 
@@ -77,166 +86,149 @@ The library supports multiple blockchain networks:
 
 ### CNGnManager Methods
 
-#### Get Balance
+The examples below mirror [`example.php`](example.php) and use the `printResult()` helper from the [Usage](#usage) section. Replace `printResult()` with `echo` if you don't need pretty-printed output.
+
+### GET Endpoints
+
+#### 1. Get Balance
 
 ```php
-$balance = $manager->getBalance();
-echo $balance;
+printResult('Get Balance', $manager->getBalance());
 ```
 
-#### Get Transaction History
+#### 2. Get Transaction History
 
 ```php
-$page = 1;
-$limit = 10;
-$transactions = $manager->getTransactionHistory($page, $limit);
-echo $transactions;
+// page 1, 10 per page
+printResult('Transaction History', $manager->getTransactionHistory(1, 10));
 ```
 
-#### Get Banks
+#### 3. Get Banks
 
 ```php
-$bankList = $manager->getBanks();
-echo $bankList;
+printResult('Get Banks', $manager->getBanks());
 ```
 
-#### Get Virtual Account
+#### 4. Get Virtual Account
 
 ```php
-$virtualAccount = $manager->getVirtualAccount();
-echo $virtualAccount;
+printResult('Get Virtual Account', $manager->getVirtualAccount());
 ```
 
-#### Withdraw from Chains
+#### 5. Get Supported Networks
 
 ```php
-/**
- * @param array{amount: int, address: string, networkId: string, shouldSaveAddress?: bool} $data
- */
-$withdrawParams = [
-    "amount" => 100,
-    "address" => '0x1234...',
-    "networkId" => 'network-id-from-supported-networks',
-    "shouldSaveAddress" => true,
-];
+printResult('Get Supported Networks', $manager->getSupportedNetworks());
 
-$withdrawResult = $manager->withdraw($withdrawParams);
-echo $withdrawResult;
+// With blockchain details
+printResult('Get Supported Networks (with blockchain)', $manager->getSupportedNetworks(includeBlockchain: true));
 ```
 
-> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
-
-#### Redeem Asset
+#### 6. Get Whitelisted Addresses
 
 ```php
-/**
- * @param array{amount: int, bankCode: string, accountNumber: string, saveDetails?: bool} $data
- */
-$redeemParams = [
-    "amount" => 1000,
-    "bankCode" => '011',
-    "accountNumber" => '1234567890',
-    "saveDetails" => true,
-];
+printResult('Get Whitelisted Addresses', $manager->getWhitelistedAddresses());
 
-$redeemResult = $manager->redeemAssets($redeemParams);
-echo $redeemResult;
+// With network details
+printResult('Get Whitelisted Addresses (with network)', $manager->getWhitelistedAddresses(includeNetwork: true));
 ```
 
-> **NOTE:** Use the `getBanks()` method to fetch the list of banks and their codes.
-
-#### Bridge Assets
+#### 7. Verify Withdrawal
 
 ```php
-/**
- * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, senderAddress?: string, callbackUrl?: string} $data
- */
-$bridgeData = [
-    "destinationNetworkId" => 'destination-network-id',
-    "destinationAddress" => "0x123....",
-    "originNetworkId" => 'origin-network-id',
-    "callbackUrl" => 'https://your-callback-url.com',
-];
-
-$bridgeResult = $manager->bridgeAssets($bridgeData);
-echo $bridgeResult;
+printResult('Verify Withdrawal', $manager->verifyWithdraw('WTH-your-transaction-ref'));
 ```
 
-> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
+### POST / PUT Endpoints
 
-#### Update Bank Account
-
-```php
-/**
- * @param array{bankName: string, bankAccountName: string, bankAccountNumber: string} $data
- */
-$updateData = [
-    "bankName" => 'Example Bank',
-    "bankAccountName" => 'Test Account',
-    "bankAccountNumber" => '1234567890',
-];
-
-$updateResult = $manager->updateBankAccount($updateData);
-echo $updateResult;
-```
-
-#### Whitelist Address
-
-```php
-/**
- * @param array{address: string, networkId: string} $data
- */
-$whitelistData = [
-    "address" => '0x1234...',
-    "networkId" => 'network-id-from-supported-networks',
-];
-
-$result = $manager->whitelistAddress($whitelistData);
-echo $result;
-```
-
-#### Get Whitelisted Addresses
-
-```php
-$addresses = $manager->getWhitelistedAddresses();
-echo $addresses;
-
-// Include network details
-$addresses = $manager->getWhitelistedAddresses(includeNetwork: true);
-echo $addresses;
-```
-
-#### Get Supported Networks
-
-```php
-$networks = $manager->getSupportedNetworks();
-echo $networks;
-
-// Include blockchain details
-$networks = $manager->getSupportedNetworks(includeBlockchain: true);
-echo $networks;
-```
-
-#### Validate Account
+#### 8. Validate Account
 
 ```php
 /**
  * @param array{bankCode: string, accountNumber: string} $data
  */
-$accountData = [
-    "bankCode" => '011',
-    "accountNumber" => '1234567890',
-];
-
-$validation = $manager->validateAccount($accountData);
-echo $validation;
+printResult('Validate Account', $manager->validateAccount([
+    'bankCode'      => '044',
+    'accountNumber' => '0123456789',
+]));
 ```
 
-#### Verify Withdrawal
+> **NOTE:** Use the `getBanks()` method to fetch the list of banks and their codes.
+
+#### 9. Redeem Assets
 
 ```php
-$verification = $manager->verifyWithdraw('your-transaction-reference');
-echo $verification;
+/**
+ * @param array{amount: int, bankCode: string, accountNumber: string, saveDetails?: bool} $data
+ */
+printResult('Redeem Assets', $manager->redeemAssets([
+    'amount'        => 1000,
+    'bankCode'      => '044',
+    'accountNumber' => '0123456789',
+    'saveDetails'   => false,
+]));
+```
+
+> **NOTE:** Use the `getBanks()` method to fetch the list of banks and their codes.
+
+#### 10. Withdraw (cNGN to external wallet)
+
+```php
+/**
+ * @param array{amount: int, address: string, networkId: string, shouldSaveAddress?: bool} $data
+ */
+// Use a networkId from getSupportedNetworks()
+printResult('Withdraw', $manager->withdraw([
+    'amount'            => 100,
+    'address'           => '0xYourWalletAddress',
+    'networkId'         => 'your-network-id',
+    'shouldSaveAddress' => false,
+]));
+```
+
+> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
+
+#### 11. Bridge Assets
+
+```php
+/**
+ * @param array{destinationNetworkId: string, destinationAddress: string, originNetworkId: string, senderAddress?: string, callbackUrl?: string} $data
+ */
+// Use networkIds from getSupportedNetworks()
+printResult('Bridge Assets', $manager->bridgeAssets([
+    'destinationNetworkId' => 'destination-network-id',
+    'destinationAddress'   => '0xDestinationAddress',
+    'originNetworkId'      => 'origin-network-id',
+    'callbackUrl'          => 'https://your-domain.com/webhook',
+]));
+```
+
+> **NOTE:** Use the `getSupportedNetworks()` method to retrieve valid network IDs.
+
+#### 12. Whitelist Address
+
+```php
+/**
+ * @param array{address: string, networkId: string} $data
+ */
+// Use a networkId from getSupportedNetworks()
+printResult('Whitelist Address', $manager->whitelistAddress([
+    'address'   => '0xAddressToWhitelist',
+    'networkId' => 'your-network-id',
+]));
+```
+
+#### 13. Update Bank Account
+
+```php
+/**
+ * @param array{bankName: string, bankAccountName: string, bankAccountNumber: string} $data
+ */
+printResult('Update Bank Account', $manager->updateBankAccount([
+    'bankName'          => 'Access Bank',
+    'bankAccountName'   => 'John Doe Enterprises',
+    'bankAccountNumber' => '0123456789',
+]));
 ```
 
 ## Testing
